@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using EFT.InventoryLogic;
 using EFT.UI.DragAndDrop;
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -28,13 +29,13 @@ namespace PlateDurabilityUI
     {
         private const string ObjectName = "PlateDurabilityGauge";
 
-        // Layout, in UI units at Size 1. A grid cell is 63 units, so body armor (3x3) is 189.
-        private const float BarWidth = 7f;
-        private const float BarHeight = 20f;
-        private const float BarGap = 2f;
-        private const float Pad = 3f;
-        private const float SoftHeight = 3f;
-        private const float SoftGap = 2f;
+        // What Armor Class Icon (slpf) names the badges it adds straight to a view that has no
+        // class icon slot of its own. Its usual badge is the game's own ArmorClassIcon image in
+        // the bottom panel, which the panel scan already finds.
+        private const string ArmorClassBadgeName = "ArmorClassBadge";
+
+        // Layout, in UI units at Size 1. A grid cell is 63 units, so body armor (3x3) is 189. The
+        // bars' own sizes come with the style (GaugeLook).
         private const float LetterHeight = 8f;
         private const float LetterGap = 1f;
         private const float LetterSize = 8f;
@@ -48,13 +49,22 @@ namespace PlateDurabilityUI
 
         private static readonly ArmorReading Scratch = new ArmorReading();
         private static readonly List<Image> ImageScratch = new List<Image>();
+        private static readonly List<Graphic> GraphicScratch = new List<Graphic>();
+        private static readonly List<TMP_Text> TextScratch = new List<TMP_Text>();
+
+        // The item name (top right) and a player's tag on the item (top left) are on the view
+        // itself, outside the info panel, so the top corners look them up directly.
+        private static readonly AccessTools.FieldRef<GridItemView, TextMeshProUGUI> CaptionRef = TextField("Caption");
+        private static readonly AccessTools.FieldRef<GridItemView, TextMeshProUGUI> TagNameRef = TextField("TagName");
         private static readonly Vector3[] Corners = new Vector3[4];
 
         private GridItemView _view;
         private ItemViewBottomPanel _bottom;
         private Item _item;
         private RectTransform _body;
+        private Image _panelShadow;
         private Image _panel;
+        private GaugeLook _look;
         private readonly List<Bar> _bars = new List<Bar>();
         private Bar _soft;
         private readonly ArmorReading _reading = new ArmorReading();
@@ -62,22 +72,25 @@ namespace PlateDurabilityUI
         private bool _snap = true;
         private bool _sliding;
         private bool _layoutDirty;
+        private bool _layoutStale;
         private float _nextPoll;
 
         private sealed class Bar
         {
             public RectTransform Root;
+            public RectTransform TrackRect;
             public Image Track;
             public Image Fill;
             public Image Wear;
             public Image Pattern;
             public TextMeshProUGUI Letter;
+            public TextMeshProUGUI LetterShadow;
             public bool Horizontal;
+            public GaugeLook Look;
             public PlateState State;
             public float Shown;
             public float Target;
             public float WearAmount;
-            public Vector2Int PatternSize;
         }
 
         // ---- entry points ----------------------------------------------------------------
@@ -90,6 +103,7 @@ namespace PlateDurabilityUI
 
             bool applicable = PlateDurabilityPlugin.Enabled.Value
                               && examined
+                              && ShownOn(view)
                               && PlateReader.TryRead(view.Item, Scratch, log: true);
             if (!applicable)
             {
@@ -127,6 +141,23 @@ namespace PlateDurabilityUI
                 {
                     PlateDurabilityPlugin.Debug("Redraw after a setting change failed for one view: " + e.Message);
                 }
+            }
+        }
+
+        /// <summary>The per-screen switches, by the screen type the game gives the view's context.</summary>
+        private static bool ShownOn(GridItemView view)
+        {
+            switch (view.ItemContext?.ViewType)
+            {
+                case EItemViewType.Ragfair:
+                case EItemViewType.NewOffer:
+                    return PlateDurabilityPlugin.OnFlea.Value;
+                case EItemViewType.TradingTrader:
+                case EItemViewType.TradingSell:
+                case EItemViewType.TradingPlayer:
+                    return PlateDurabilityPlugin.AtTraders.Value;
+                default:
+                    return PlateDurabilityPlugin.InInventory.Value;
             }
         }
 
@@ -250,8 +281,19 @@ namespace PlateDurabilityUI
             _body.anchorMin = _body.anchorMax = new Vector2(0.5f, 0.5f);
             _body.pivot = Vector2.zero;
 
-            _panel = body.AddComponent<Image>();
-            _panel.sprite = Sprites.Panel;
+            // The panel is a child, not the body's own image, so a shadow can sit behind it.
+            RectTransform shadowRect = NewRect("Shadow", _body);
+            Stretch(shadowRect, 0f);
+            shadowRect.offsetMin = new Vector2(0f, -1f);
+            shadowRect.offsetMax = new Vector2(0f, -1f);
+            _panelShadow = shadowRect.gameObject.AddComponent<Image>();
+            _panelShadow.type = Image.Type.Sliced;
+            _panelShadow.color = new Color(0f, 0f, 0f, 0.45f);
+            _panelShadow.raycastTarget = false;
+
+            RectTransform panelRect = NewRect("Panel", _body);
+            Stretch(panelRect, 0f);
+            _panel = panelRect.gameObject.AddComponent<Image>();
             _panel.type = Image.Type.Sliced;
             _panel.raycastTarget = false;
 
@@ -260,8 +302,9 @@ namespace PlateDurabilityUI
 
         /// <summary>
         /// Pointing at the gauge opens the plate tooltip. Only the backing panel is a raycast
-        /// target; clicks, drags and scrolling find no handler on it and go up to the item view
-        /// exactly as before.
+        /// target (in the styles with no backing it is there but clear); pointer enter and exit
+        /// reach this on the body from it. Clicks, drags and scrolling find no handler on either
+        /// and go up to the item view exactly as before.
         /// </summary>
         private sealed class Hover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
         {
@@ -286,8 +329,8 @@ namespace PlateDurabilityUI
             Bar bar = new Bar { Horizontal = horizontal };
 
             bar.Root = NewRect(horizontal ? "Soft" : "Plate", _body);
-            bar.Track = bar.Root.gameObject.AddComponent<Image>();
-            bar.Track.sprite = Sprites.Track;
+            bar.TrackRect = NewRect("Track", bar.Root);
+            bar.Track = bar.TrackRect.gameObject.AddComponent<Image>();
             bar.Track.type = Image.Type.Sliced;
             bar.Track.raycastTarget = false;
 
@@ -313,14 +356,23 @@ namespace PlateDurabilityUI
             return bar;
         }
 
-        private TextMeshProUGUI NewLetter(Bar bar)
+        /// <summary>The bar's letter and, behind it, a copy for the styles that shadow their letters.</summary>
+        private void NewLetter(Bar bar)
         {
             TextMeshProUGUI template = _bottom != null ? _bottom.ItemValue : null;
             if (template == null || template.font == null)
             {
-                return null;
+                return;
             }
-            RectTransform rect = NewRect("Letter", _body);
+            // A copy rather than a TMP underlay: that would need its own instance of the game's
+            // font material, and the shader may not have one.
+            bar.LetterShadow = NewText("LetterShadow", template);
+            bar.Letter = NewText("Letter", template);
+        }
+
+        private TextMeshProUGUI NewText(string name, TextMeshProUGUI template)
+        {
+            RectTransform rect = NewRect(name, _body);
             TextMeshProUGUI letter = rect.gameObject.AddComponent<TextMeshProUGUI>();
             letter.font = template.font;
             letter.fontSharedMaterial = template.fontSharedMaterial;
@@ -348,21 +400,65 @@ namespace PlateDurabilityUI
         private Image NewInset(string name, Transform parent)
         {
             RectTransform rect = NewRect(name, parent);
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = new Vector2(1f, 1f);
-            rect.offsetMax = new Vector2(-1f, -1f);
+            Stretch(rect, 1f);
             Image image = rect.gameObject.AddComponent<Image>();
             image.sprite = Sprites.White;
             image.raycastTarget = false;
             return image;
         }
 
+        /// <summary>Fills the parent, <paramref name="inset"/> in from each edge (out, if negative).</summary>
+        private static void Stretch(RectTransform rect, float inset)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = new Vector2(inset, inset);
+            rect.offsetMax = new Vector2(-inset, -inset);
+        }
+
         // ---- drawing ---------------------------------------------------------------------
+
+        /// <summary>Puts the panel in <paramref name="look"/>; bars follow in <see cref="Restyle"/>.</summary>
+        private void UseLook(GaugeLook look)
+        {
+            if (_look == look)
+            {
+                return;
+            }
+            _look = look;
+            _panel.sprite = look.Panel;
+            _panel.color = look.PanelColor;
+            _panelShadow.sprite = look.Panel;
+            _panelShadow.enabled = look.PanelShadow;
+        }
+
+        private static void Restyle(Bar bar, GaugeLook look)
+        {
+            if (bar.Look == look)
+            {
+                return;
+            }
+            bar.Look = look;
+            bar.Track.sprite = look.Track;
+            bar.Track.color = look.TrackColor;
+            Stretch(bar.TrackRect, -look.TrackOutset);
+            Stretch(bar.Fill.rectTransform, look.FillInset);
+            Stretch(bar.Wear.rectTransform, look.FillInset);
+            if (bar.Letter != null)
+            {
+                FontStyles style = look.LetterBold ? FontStyles.Bold : FontStyles.Normal;
+                bar.Letter.color = look.LetterColor;
+                bar.Letter.fontStyle = style;
+                bar.LetterShadow.color = look.LetterShadow;
+                bar.LetterShadow.fontStyle = style;
+            }
+        }
 
         private void Apply()
         {
-            bool letters = PlateDurabilityPlugin.ShowLetters.Value;
+            GaugeLook look = GaugeLook.For(PlateDurabilityPlugin.Style.Value);
+            UseLook(look);
+            bool letters = look.Letters && PlateDurabilityPlugin.ShowLetters.Value;
             bool soft = PlateDurabilityPlugin.ShowSoftBar.Value && _reading.HasSoft;
             bool animate = PlateDurabilityPlugin.Animate.Value && !_snap;
             int count = _reading.Plates.Count;
@@ -379,11 +475,11 @@ namespace PlateDurabilityUI
                 _bars.Add(NewBar(horizontal: false));
             }
 
-            float width = Pad * 2f + count * BarWidth + Mathf.Max(count - 1, 0) * BarGap;
-            float softY = Pad;
-            float letterY = softY + (soft ? SoftHeight + SoftGap : 0f);
+            float width = look.Pad * 2f + count * look.BarWidth + Mathf.Max(count - 1, 0) * look.BarGap;
+            float softY = look.Pad;
+            float letterY = softY + (soft ? look.SoftHeight + look.SoftGap : 0f);
             float barY = letterY + (letters ? LetterHeight + LetterGap : 0f);
-            float height = barY + BarHeight + Pad;
+            float height = barY + look.BarHeight + look.Pad;
             _size = new Vector2(width, height);
             _body.sizeDelta = _size;
 
@@ -397,26 +493,38 @@ namespace PlateDurabilityUI
                     if (bar.Letter != null)
                     {
                         bar.Letter.gameObject.SetActive(false);
+                        bar.LetterShadow.gameObject.SetActive(false);
                     }
                     continue;
                 }
 
                 PlateReading plate = _reading.Plates[i];
-                float x = Pad + i * (BarWidth + BarGap);
-                Set(bar.Root, x, barY, BarWidth, BarHeight);
-                SetTarget(bar, plate, animate);
-
+                float x = look.Pad + i * (look.BarWidth + look.BarGap);
                 if (letters && bar.Letter == null)
                 {
-                    bar.Letter = NewLetter(bar);
+                    NewLetter(bar);
+                    bar.Look = null;
                 }
+                Set(bar.Root, x, barY, look.BarWidth, look.BarHeight);
+                Restyle(bar, look);
+                SetTarget(bar, plate, animate);
+
                 if (bar.Letter != null)
                 {
+                    bool shadow = letters && look.LetterShadow.a > 0f;
                     bar.Letter.gameObject.SetActive(letters);
+                    bar.LetterShadow.gameObject.SetActive(shadow);
                     if (letters)
                     {
-                        Set(bar.Letter.rectTransform, x - 2f, letterY, BarWidth + 4f, LetterHeight);
-                        bar.Letter.text = LetterFor(plate.Zone);
+                        string text = LabelFor(plate);
+                        Set(bar.Letter.rectTransform, x - 2f, letterY, look.BarWidth + 4f, LetterHeight);
+                        bar.Letter.text = text;
+                        if (shadow)
+                        {
+                            Set(bar.LetterShadow.rectTransform, x - 2f + look.ShadowOffset.x, letterY + look.ShadowOffset.y,
+                                look.BarWidth + 4f, LetterHeight);
+                            bar.LetterShadow.text = text;
+                        }
                     }
                 }
             }
@@ -430,13 +538,15 @@ namespace PlateDurabilityUI
                 _soft.Root.gameObject.SetActive(soft);
                 if (soft)
                 {
-                    Set(_soft.Root, Pad, softY, width - Pad * 2f, SoftHeight);
+                    Set(_soft.Root, look.Pad, softY, width - look.Pad * 2f, look.SoftHeight);
+                    Restyle(_soft, look);
                     SetTarget(_soft, _reading.Soft, animate);
                 }
             }
 
             _snap = false;
             _layoutDirty = true;
+            _layoutStale = true;
         }
 
         private void SetTarget(Bar bar, PlateReading plate, bool animate)
@@ -491,31 +601,28 @@ namespace PlateDurabilityUI
             if (fitted)
             {
                 // Anything left at all keeps at least a sliver, so "almost gone" never reads as "empty".
-                float inner = (bar.Horizontal ? bar.Root.sizeDelta.x : bar.Root.sizeDelta.y) - 2f;
+                float inner = (bar.Horizontal ? bar.Root.sizeDelta.x : bar.Root.sizeDelta.y) - 2f * bar.Look.FillInset;
                 float sliver = inner > 0f ? 1f / inner : 0f;
                 bar.Fill.fillAmount = bar.Shown > 0f ? Mathf.Max(bar.Shown, sliver) : 0f;
-                bar.Fill.color = Sprites.Ramp(bar.Shown);
+                bar.Fill.color = bar.Look.Ramp(bar.Shown);
                 bar.Wear.fillAmount = bar.WearAmount;
                 return;
             }
 
+            // Cached per state, colour and size, and the sprite setter ignores the same sprite.
             Vector2 size = bar.Root.sizeDelta;
-            Vector2Int pixels = new Vector2Int(Mathf.RoundToInt(size.x), Mathf.RoundToInt(size.y));
-            if (bar.Pattern.sprite == null || pixels != bar.PatternSize || bar.Pattern.sprite.name != PatternName(bar.State))
+            bar.Pattern.sprite = Sprites.Pattern(bar.State == PlateState.Broken, bar.Look.Dash,
+                                                 Mathf.RoundToInt(size.x), Mathf.RoundToInt(size.y));
+        }
+
+        private static string LabelFor(PlateReading plate)
+        {
+            if (PlateDurabilityPlugin.Labels.Value == SlotLabel.ArmorClass)
             {
-                bar.Pattern.sprite = Sprites.Pattern(bar.State == PlateState.Broken, pixels.x, pixels.y);
-                bar.PatternSize = pixels;
+                int armorClass = plate.Armor != null ? plate.Armor.ArmorClass : 0;
+                return armorClass > 0 ? armorClass.ToString() : "-";
             }
-        }
-
-        private static string PatternName(PlateState state)
-        {
-            return state == PlateState.Broken ? "PlateGauge.Broken" : "PlateGauge.Empty";
-        }
-
-        private static string LetterFor(PlateZone zone)
-        {
-            switch (zone)
+            switch (plate.Zone)
             {
                 case PlateZone.Front: return "F";
                 case PlateZone.Back: return "B";
@@ -533,21 +640,46 @@ namespace PlateDurabilityUI
 
         // ---- placing ---------------------------------------------------------------------
 
-        /// <summary>
-        /// Bottom-left of the icon, clear of whatever else the game (or another mod) has put in
-        /// that corner, and never into the durability numbers on the right. On an item too narrow
-        /// for both, the gauge shrinks rather than overlap.
-        /// </summary>
+        /// <summary>In the corner the settings name, clear of whatever the game or another mod draws there.</summary>
         private void Place()
         {
             if (!(_view.transform is RectTransform viewRect))
             {
                 return;
             }
+            bool top = PlateDurabilityPlugin.Corner.Value != GaugeCorner.BottomLeft;
+            if (_layoutStale)
+            {
+                _layoutStale = false;
+                SettleLayout(top);
+            }
+
             Rect item = RectIn(viewRect);
             float scale = PlateDurabilityPlugin.Size.Value;
-            float x = item.xMin + Margin;
-            float y = item.yMin + Margin;
+            float x;
+            float y;
+            if (top)
+            {
+                PlaceTop(item, PlateDurabilityPlugin.Corner.Value == GaugeCorner.TopRight, ref scale, out x, out y);
+            }
+            else
+            {
+                PlaceBottomLeft(viewRect, item, ref scale, out x, out y);
+            }
+
+            _body.localScale = new Vector3(scale, scale, 1f);
+            _body.localPosition = new Vector3(x, y, 0f);
+        }
+
+        /// <summary>
+        /// Bottom-left of the icon, right of any small icon already in that corner, and never into
+        /// the durability numbers on the right. On an item too narrow for both, the gauge shrinks
+        /// rather than overlap.
+        /// </summary>
+        private void PlaceBottomLeft(RectTransform viewRect, Rect item, ref float scale, out float x, out float y)
+        {
+            x = item.xMin + Margin;
+            y = item.yMin + Margin;
             float bandTop = y + _size.y * scale;
 
             if (_bottom != null)
@@ -556,18 +688,16 @@ namespace PlateDurabilityUI
                 _bottom.GetComponentsInChildren(false, ImageScratch);
                 foreach (Image image in ImageScratch)
                 {
-                    if (!image.enabled || image.sprite == null || image.color.a < 0.05f)
-                    {
-                        continue;
-                    }
-                    Rect r = RectIn(image.rectTransform);
-                    bool backdrop = r.width > item.width * 0.5f || r.height > item.height * 0.5f;
-                    bool inBand = r.yMin < bandTop && r.yMax > item.yMin;
-                    bool leftHalf = r.center.x < item.center.x;
-                    if (r.width > 0f && !backdrop && inBand && leftHalf)
-                    {
-                        x = Mathf.Max(x, r.xMax + IconGap);
-                    }
+                    x = Clear(image, item, bandTop, x);
+                }
+            }
+
+            for (int i = 0; i < viewRect.childCount; i++)
+            {
+                Transform child = viewRect.GetChild(i);
+                if (child.name == ArmorClassBadgeName && child.gameObject.activeSelf)
+                {
+                    x = Clear(child.GetComponent<Image>(), item, bandTop, x);
                 }
             }
 
@@ -592,9 +722,165 @@ namespace PlateDurabilityUI
             {
                 scale *= Mathf.Max(fit, MinFit);
             }
+        }
 
-            _body.localScale = new Vector3(scale, scale, 1f);
-            _body.localPosition = new Vector3(x, y, 0f);
+        /// <summary>
+        /// A top corner, under whatever the game draws there: the item name top right, the
+        /// quick-slot number top left, the price across the top on trader screens, an item tag.
+        /// Text is measured by its letters, not its box, which often spans the whole icon. On an
+        /// item too short for the gauge under all that, it shrinks.
+        /// </summary>
+        private void PlaceTop(Rect item, bool right, ref float scale, out float x, out float y)
+        {
+            float width = _size.x * scale;
+            float left = right ? item.xMax - Margin - width : item.xMin + Margin;
+            float top = item.yMax - Margin;
+
+            GraphicScratch.Clear();
+            transform.parent.GetComponentsInChildren(false, GraphicScratch);
+            foreach (Graphic graphic in GraphicScratch)
+            {
+                top = Under(graphic, item, left, left + width, top);
+            }
+            top = Under(Field(CaptionRef, _view), item, left, left + width, top);
+            top = Under(Field(TagNameRef, _view), item, left, left + width, top);
+
+            float fit = (top - (item.yMin + Margin)) / (_size.y * scale);
+            if (fit < 1f)
+            {
+                scale *= Mathf.Max(fit, MinFit);
+            }
+            width = _size.x * scale;
+            x = right ? item.xMax - Margin - width : item.xMin + Margin;
+            y = top - _size.y * scale;
+        }
+
+        /// <summary>
+        /// <paramref name="top"/>, moved down below <paramref name="graphic"/> if that is an icon
+        /// or a piece of text in the top half of the item, over the gauge's columns.
+        /// </summary>
+        private float Under(Graphic graphic, Rect item, float xMin, float xMax, float top)
+        {
+            if (graphic == null || !graphic.isActiveAndEnabled || graphic.color.a < 0.05f
+                || graphic.transform.IsChildOf(transform))
+            {
+                return top;
+            }
+
+            Rect r;
+            if (graphic is TMP_Text text)
+            {
+                Bounds bounds = text.textBounds;
+                if (string.IsNullOrEmpty(text.text) || bounds.size.x <= 0f)
+                {
+                    return top;
+                }
+                Vector3 a = transform.InverseTransformPoint(text.rectTransform.TransformPoint(bounds.min));
+                Vector3 c = transform.InverseTransformPoint(text.rectTransform.TransformPoint(bounds.max));
+                r = Rect.MinMaxRect(Mathf.Min(a.x, c.x), Mathf.Min(a.y, c.y), Mathf.Max(a.x, c.x), Mathf.Max(a.y, c.y));
+            }
+            else if (graphic is Image image && image.sprite != null)
+            {
+                r = RectIn(image.rectTransform);
+                if (r.width > item.width * 0.5f || r.height > item.height * 0.5f)
+                {
+                    return top; // a backdrop: the item's own picture, a colour panel, a border
+                }
+            }
+            else
+            {
+                return top; // hover targets and other graphics that draw nothing
+            }
+
+            bool topHalf = r.center.y > item.center.y;
+            bool overColumns = r.xMax > xMin && r.xMin < xMax;
+            return r.width > 0f && topHalf && overColumns ? Mathf.Min(top, r.yMin - IconGap) : top;
+        }
+
+        private static T Field<T>(AccessTools.FieldRef<GridItemView, T> field, GridItemView view) where T : class
+        {
+            return field != null && view != null ? field(view) : null;
+        }
+
+        private static AccessTools.FieldRef<GridItemView, TextMeshProUGUI> TextField(string name)
+        {
+            // Serialized fields keep their names in the unpatched assembly too, but may be private there.
+            try
+            {
+                return AccessTools.FieldRefAccess<GridItemView, TextMeshProUGUI>(name);
+            }
+            catch (Exception e)
+            {
+                PlateDurabilityPlugin.Debug("GridItemView." + name + " not found, the top corners will not avoid it: " + e.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The icons and text the gauge keeps clear of sit in layout groups (the bottom-left icon
+        /// stack, with Armor Class Icon's badge, which is the game's class icon turned on; the
+        /// quick-slot number; the trader price), and Unity only moves them into place when the
+        /// canvas rebuilds, after LateUpdate. Measured right after UpdateInfo they are still where
+        /// the pooled view last had them, so the gauge would land on top of them and only jump
+        /// clear on the next poll. Run those layouts now instead, and the text meshes the gauge
+        /// measures with them, so the first placement is the right one.
+        /// </summary>
+        private void SettleLayout(bool top)
+        {
+            // A layout rebuild does nothing on a rect with no layout group of its own (the info
+            // panel), so each group under it is rebuilt by itself.
+            Transform panel = transform.parent;
+            if (_bottom != null && _bottom.transform is RectTransform bottomRect && bottomRect.parent != panel)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(bottomRect);
+            }
+            for (int i = 0; i < panel.childCount; i++)
+            {
+                if (panel.GetChild(i) is RectTransform child && child.gameObject.activeInHierarchy
+                    && child.GetComponent<LayoutGroup>() != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(child);
+                }
+            }
+
+            TextMeshProUGUI value = _bottom != null ? _bottom.ItemValue : null;
+            if (value != null && value.isActiveAndEnabled)
+            {
+                value.ForceMeshUpdate();
+            }
+            if (!top)
+            {
+                return;
+            }
+            TextScratch.Clear();
+            panel.GetComponentsInChildren(false, TextScratch);
+            TextScratch.Add(Field(CaptionRef, _view));
+            TextScratch.Add(Field(TagNameRef, _view));
+            foreach (TMP_Text text in TextScratch)
+            {
+                if (text != null && text.isActiveAndEnabled && !text.transform.IsChildOf(transform))
+                {
+                    text.ForceMeshUpdate();
+                }
+            }
+        }
+
+        /// <summary>The gauge's left edge, pushed right of <paramref name="image"/> if that is a small icon in its way.</summary>
+        private float Clear(Image image, Rect item, float bandTop, float x)
+        {
+            if (image == null || !image.enabled || image.sprite == null || image.color.a < 0.05f)
+            {
+                return x;
+            }
+            Rect r = RectIn(image.rectTransform);
+            bool backdrop = r.width > item.width * 0.5f || r.height > item.height * 0.5f;
+            bool inBand = r.yMin < bandTop && r.yMax > item.yMin;
+            bool leftHalf = r.center.x < item.center.x;
+            if (r.width > 0f && !backdrop && inBand && leftHalf)
+            {
+                return Mathf.Max(x, r.xMax + IconGap);
+            }
+            return x;
         }
 
         private Rect RectIn(RectTransform rect)

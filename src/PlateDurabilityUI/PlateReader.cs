@@ -95,7 +95,8 @@ namespace PlateDurabilityUI
         private static readonly HashSet<Slot> HolderSlots = new HashSet<Slot>();
 
         /// <param name="log">False for the gauge's own polling, which would flood the log.</param>
-        internal static bool TryRead(Item item, ArmorReading reading, bool log)
+        /// <param name="anyArmor">True for the raid alert: read rigs and body armor whatever the gauge's own switches say.</param>
+        internal static bool TryRead(Item item, ArmorReading reading, bool log, bool anyArmor = false)
         {
             reading.Clear();
             if (!(item is CompoundItem compound) || compound.Slots == null || compound.Slots.Length == 0)
@@ -105,7 +106,7 @@ namespace PlateDurabilityUI
 
             // A rig carries a grid for its pouches; body armor has none.
             bool isRig = compound.Grids != null && compound.Grids.Length > 0;
-            if (isRig ? !PlateDurabilityPlugin.OnRigs.Value : !PlateDurabilityPlugin.OnBodyArmor.Value)
+            if (!anyArmor && (isRig ? !PlateDurabilityPlugin.OnRigs.Value : !PlateDurabilityPlugin.OnBodyArmor.Value))
             {
                 return false;
             }

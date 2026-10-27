@@ -26,6 +26,12 @@ then every soft insert, each with its armor class, exact durability and a percen
 gauge's colour. Broken plates and durability lost to repairs are called out, and the last row
 tells you how many plate slots are filled.
 
+## In raid
+
+When a plate in the armor or rig you are wearing is shot to zero, the game's own message in the
+top right tells you which one: "Front plate broken (Kirasa-N)". Plates that were already broken
+when the raid started stay quiet.
+
 ## Settings
 
 Press F12 in game (BepInEx Configuration Manager).
@@ -35,16 +41,23 @@ Press F12 in game (BepInEx Configuration Manager).
 | Show plate gauge | on | |
 | On body armor | on | |
 | On armored rigs | on | |
+| In the stash and inventory | on | Everywhere that is not a trader or the flea market. |
+| At traders | on | |
+| On the flea market | on | |
 | Show soft armor bar | on | |
-| Show slot letters | on | F, B, L, R under the bars. |
+| Show slot letters | on | A label under each bar. |
+| Slot labels | Letters | Letters: F, B, L, R. ArmorClass: each plate's class. |
 | Detailed plate tooltip | on | Off: the vanilla tooltip rows. |
 | Hover the gauge for details | on | Off: only the durability numbers open the tooltip, as in vanilla. |
 | Full bar means | OriginalMaximum | OriginalMaximum: a full bar is the plate as new, the scale the game's protection maths uses. CurrentMaximum: full is the maximum left after repairs. |
 | Show repair wear | on | The dark cap for durability lost to repairs. |
 | Hide on healthy armor | off | Only show the gauge once something needs attention. |
 | Healthy above (%) | 90 | Used by the setting above. |
+| Style | Smoke | Smoke, Classic, Bare, Silver or Slim. |
+| Corner | BottomLeft | BottomLeft, TopLeft or TopRight. It keeps clear of the game's icons and text there. |
 | Size | 1.0 | It also shrinks by itself on small items. |
 | Animate changes | on | Bars slide when a plate is hit, repaired or swapped. |
+| Message when a plate breaks | on | The raid message above. |
 | Log armor readings | off | For bug reports: writes each armor's slots to `BepInEx\LogOutput.log`. |
 
 ## Install
@@ -60,6 +73,7 @@ no server part. Built for SPT 4.1.x.
 - Armor found in raid works the same: in crates, bags, corpses and stashes. As in vanilla, an
   item shows nothing until the container is searched, and no numbers (so no gauge) until you
   have examined that model.
+- **Works next to Armor Class Icon.** The gauge sits beside its class badges, never on them.
 - Helmets are left out for now.
 - Unexamined items get no gauge, the same as their numbers show "?".
 - Nothing about the items changes. The gauge only reads them.

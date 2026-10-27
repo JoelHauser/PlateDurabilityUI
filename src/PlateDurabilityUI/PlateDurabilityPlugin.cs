@@ -16,6 +16,43 @@ namespace PlateDurabilityUI
         CurrentMaximum
     }
 
+    /// <summary>How the gauge is drawn. See <see cref="GaugeLook"/> for what each one sets.</summary>
+    public enum GaugeStyle
+    {
+        /// <summary>A soft see-through shadow behind borderless bars, muted colours.</summary>
+        Smoke,
+
+        /// <summary>The 0.0.1 look: a dark framed panel, framed bars, bright colours.</summary>
+        Classic,
+
+        /// <summary>No backing: outlined bars and outlined letters straight on the item.</summary>
+        Bare,
+
+        /// <summary>A light silver chip like the game's armor class icons, dark bars and letters.</summary>
+        Silver,
+
+        /// <summary>No backing, no letters: thin outlined bars, half the size.</summary>
+        Slim
+    }
+
+    /// <summary>Which corner of the item icon the gauge sits in.</summary>
+    public enum GaugeCorner
+    {
+        BottomLeft,
+        TopLeft,
+        TopRight
+    }
+
+    /// <summary>What is written under each bar.</summary>
+    public enum SlotLabel
+    {
+        /// <summary>F, B, L, R: which slot the bar is.</summary>
+        Letters,
+
+        /// <summary>The plate's armor class, a dash for an empty slot.</summary>
+        ArmorClass
+    }
+
     /// <summary>
     /// Draws a small gauge on every piece of body armor and every armored rig: one bar per plate
     /// slot (front, back, left, right), plus a thin bar for the weakest soft insert. Each bar's
@@ -32,23 +69,30 @@ namespace PlateDurabilityUI
         public const string PluginName = "Plate Durability UI";
 
         /// <summary>Must match the csproj's Version. Two places, and they have to agree.</summary>
-        public const string PluginVersion = "0.0.1";
+        public const string PluginVersion = "0.0.2";
 
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> OnBodyArmor;
         internal static ConfigEntry<bool> OnRigs;
+        internal static ConfigEntry<bool> InInventory;
+        internal static ConfigEntry<bool> AtTraders;
+        internal static ConfigEntry<bool> OnFlea;
         internal static ConfigEntry<bool> ShowSoftBar;
         internal static ConfigEntry<bool> ShowLetters;
+        internal static ConfigEntry<SlotLabel> Labels;
         internal static ConfigEntry<bool> DetailedTooltip;
         internal static ConfigEntry<bool> HoverGauge;
         internal static ConfigEntry<DurabilityScale> Scale;
         internal static ConfigEntry<bool> ShowWear;
         internal static ConfigEntry<bool> HideHealthy;
         internal static ConfigEntry<int> HealthyAbove;
+        internal static ConfigEntry<GaugeStyle> Style;
+        internal static ConfigEntry<GaugeCorner> Corner;
         internal static ConfigEntry<float> Size;
         internal static ConfigEntry<bool> Animate;
+        internal static ConfigEntry<bool> AlertOnBreak;
         internal static ConfigEntry<bool> DebugLogging;
 
         private void Awake()
@@ -74,6 +118,25 @@ namespace PlateDurabilityUI
                 true,
                 "Tactical rigs that take plates.");
 
+            InInventory = Config.Bind(
+                "1. General",
+                "In the stash and inventory",
+                true,
+                "Your stash, equipment, containers, loot and every other screen that is not a "
+                + "trader or the flea market.");
+
+            AtTraders = Config.Bind(
+                "1. General",
+                "At traders",
+                true,
+                "The trader's goods and your own items on the trade screen.");
+
+            OnFlea = Config.Bind(
+                "1. General",
+                "On the flea market",
+                true,
+                "Flea market offers and the add-offer window.");
+
             ShowSoftBar = Config.Bind(
                 "1. General",
                 "Show soft armor bar",
@@ -85,7 +148,14 @@ namespace PlateDurabilityUI
                 "1. General",
                 "Show slot letters",
                 true,
-                "F, B, L and R under the bars.");
+                "A label under each bar: the slot (F, B, L, R) or the plate's class, see Slot labels.");
+
+            Labels = Config.Bind(
+                "1. General",
+                "Slot labels",
+                SlotLabel.Letters,
+                "Letters: F, B, L and R. ArmorClass: each plate's armor class (a dash for an empty "
+                + "slot). Not drawn in the Slim style.");
 
             DetailedTooltip = Config.Bind(
                 "1. General",
@@ -134,6 +204,24 @@ namespace PlateDurabilityUI
                     + "insert is at or above this.",
                     new AcceptableValueRange<int>(50, 100)));
 
+            Style = Config.Bind(
+                "3. Look",
+                "Style",
+                GaugeStyle.Smoke,
+                "Smoke: a soft see-through shadow behind the bars, muted colours. "
+                + "Classic: a dark framed panel, bright colours. "
+                + "Bare: no backing, outlined bars and letters. "
+                + "Silver: a light chip that matches the game's armor class icons. "
+                + "Slim: no backing and no letters, thin bars, half the size.");
+
+            Corner = Config.Bind(
+                "3. Look",
+                "Corner",
+                GaugeCorner.BottomLeft,
+                "Where on the icon the gauge sits. It moves clear of the game's own icons and text "
+                + "in that corner (and other mods' icons): right of them at the bottom, under the "
+                + "item name, quick-slot number or trader price at the top.");
+
             Size = Config.Bind(
                 "3. Look",
                 "Size",
@@ -149,8 +237,15 @@ namespace PlateDurabilityUI
                 true,
                 "Bars slide to their new level when a plate takes damage, is repaired or swapped.");
 
+            AlertOnBreak = Config.Bind(
+                "4. In raid",
+                "Message when a plate breaks",
+                true,
+                "In raid, when a plate in the armor or rig you are wearing is shot to zero, the game "
+                + "shows a message in the top right saying which one.");
+
             DebugLogging = Config.Bind(
-                "4. Debug",
+                "5. Debug",
                 "Log armor readings",
                 false,
                 "Write each armor's plate slots and durabilities to LogOutput.log when its gauge is "
@@ -172,6 +267,11 @@ namespace PlateDurabilityUI
             }
 
             Logger.LogInfo(PluginName + " " + PluginVersion + " loaded.");
+        }
+
+        private void Update()
+        {
+            PlateAlerts.Tick();
         }
 
         internal static void Debug(string message)

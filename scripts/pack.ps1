@@ -55,9 +55,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 $built = Join-Path $root 'src\PlateDurabilityUI\bin\Release\PlateDurabilityUI.dll'
 
 # ---- zip -------------------------------------------------------------------------
+# The DLL only: Joel's releases never carry a README.
 $entries = [ordered]@{
     'BepInEx/plugins/PlateDurabilityUI.dll' = $built
-    'PlateDurabilityUI-README.md'           = (Join-Path $root 'README.md')
 }
 
 $dist = Join-Path $root 'dist'

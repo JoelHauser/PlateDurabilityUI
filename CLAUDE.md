@@ -9,32 +9,29 @@ Joel's brief (2026-10-27): it must look like it shipped with EFT, polished, and 
 added by any other mod. Helmets are out for v1. Design mockup (bars style chosen, continuous
 colour ramp, icon only): https://claude.ai/artifact/XZUGkBPaihU8Y9xcCn8RfJ
 
-## NEXT, on the home machine: build 0.0.1 and attach it to the pre-release
-
-Joel asked (2026-10-27) for a GitHub **pre-release 0.0.1**. It was created from the work machine
-with **no zip**: that machine has no patched install, and a DLL compiled against the unpatched
-assembly carries obfuscated names (`_E371`, `_EE74`, ...) in its member references, so it would
-not load in SPT. In PowerShell, from the repo root:
-
-1. `git pull`. Check `Get-Process EscapeFromTarkov -ErrorAction SilentlyContinue` first (`-Install`
-   cannot replace a DLL the game has loaded).
-2. `scripts\pack.ps1 -SPTPath H:\SPT4.1.X -Install` -> `dist\PlateDurabilityUI-0.0.1.zip`.
-   **If the build fails, stop and fix it before uploading anything.**
-3. `gh release upload v0.0.1 dist\PlateDurabilityUI-0.0.1.zip`, then edit the notes to drop the
-   "download coming" line: `gh release edit v0.0.1 --notes-file <notes>` (UTF-8 without BOM).
-4. Run the raid test list below.
-
 ## State as it stands
 
-**0.0.1 written 2026-10-27 on the work machine, never run.** It compiles (0 warnings, warnings
-are errors) against `C:\HUH`'s **unpatched** 4.1.5 Assembly-CSharp with
-`-p:CompileCheckOnly=true`; that DLL must not ship. A real build needs a patched install (home
-machine, `H:\SPT4.1.X`): `scripts\pack.ps1 -SPTPath H:\SPT4.1.X -Install`.
+**0.0.2 released 2026-10-27 as a GitHub pre-release** (built on the home machine against
+`H:\SPT4.1.X`, installed there). In it, beyond 0.0.1: the Armor Class Icon placement fix, five
+styles, per-screen switches, corner choice, class labels and the raid break message. Joel ran
+the styles in game and said "looks good". **Not yet run in game:** the corners, per-screen
+switches, class labels and the raid message (tests 15-18 below). The 0.0.1 pre-release zip
+still has a README inside; 0.0.2's does not.
 
-The source names **no obfuscated type**, which is why the same source compiles against both the
-unpatched (`_E371`, `_EEA7`, ...) and the SPT-remapped assembly. Keep it that way: reach
-obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHolderComponent`,
-`RepairableComponent`, `CompoundItem.Slots/Grids`) and `IEnumerable<Slot>` covariance.
+The source names **no obfuscated type and no member that is only public after SPT's
+publicizer**, which is why the same source compiles against both the unpatched (`_E371`,
+`_EEA7`, ...) and the SPT-remapped assembly. Keep it that way: reach obfuscated types only
+through named members (`Slot`, `ArmorComponent`, `ArmorHolderComponent`, `RepairableComponent`,
+`CompoundItem.Slots/Grids`, `view.ItemContext.ViewType`) and `IEnumerable<Slot>` covariance;
+remapped types by reflection (`NotificationManager`); private-in-vanilla fields with
+`AccessTools.FieldRefAccess` (`GridItemView.Caption/TagName`). `Player.Equipment` failed this
+(not public in vanilla): use `player.Profile.Inventory.Equipment`.
+
+**Check it on the home machine** without a work machine: build a copy of the sources against a
+scratch "install" whose `Assembly-CSharp.dll` is `H:\SPT4.1.X\...\Assembly-CSharp.dll.spt-bak`,
+with `-p:CompileCheckOnly=true` (copy the sources: pointing obj/out elsewhere from the repo
+duplicates the generated AssemblyInfo). A DLL compiled that way carries obfuscated names and must
+never ship.
 
 ## How it works
 
@@ -56,6 +53,28 @@ obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHol
   TemplateDurability`, `_fillWear = (Template - Max)`) and `_E340.RealResistance(Durability,
   TemplateDurability, ...)` in ArmorComponent's damage maths. Broken = `ArmorComponent.IsDestroyed`
   (`Durability < 0.01`).
+- **Styles** (Joel asked 2026-10-27, after the 0.0.1 black panel "didn't look right" next to
+  Armor Class Icon's badges, for all five mockups as an option; mockup canvas
+  https://claude.ai/artifact/X93myK4EA4LrBdRcy9kDkb): `3. Look > Style` = Smoke (default, my
+  pick, not Joel's), Classic (0.0.1), Bare, Silver, Slim. `GaugeLook.cs` holds each one's sizes,
+  sprites and colours; `PlateGauge.UseLook/Restyle` apply them, cached per bar so a restyle only
+  happens on change. Panel is a child of the body (so Silver's drop shadow can sit behind it);
+  in Bare/Slim it is clear but still the raycast target for the hover. Letter shadows are a
+  second TMP copy, not an underlay (no font material instance). Slim never draws letters. The
+  tooltip numbers keep the Classic ramp in every style (`Sprites.Ramp`).
+- **Options added in 0.0.2** (Joel 2026-10-27):
+  - Per-screen switches by `view.ItemContext.ViewType`, grouped as Armor Class Icon does: flea =
+    Ragfair/NewOffer, traders = TradingTrader/TradingSell/TradingPlayer, else inventory.
+  - Corner: `PlaceTop` pushes the gauge down below every Image (not backdrops) and TMP text (by
+    `textBounds`) in the top half over its columns: the info panel's graphics plus `Caption`
+    (name) and `TagName`. `SettleLayout` rebuilds every layout group under the info panel and,
+    for top corners, force-updates those texts' meshes first.
+  - Slot labels: letters or `ArmorComponent.ArmorClass`.
+  - **PlateAlerts**: polls `MainPlayer`'s ArmorVest and TacticalVest every 0.5 s through
+    PlateReader (`anyArmor: true`, ignoring the gauge's rig/armor switches). A Fitted -> Broken
+    change of a known plate (key item id + slot id) shows
+    `NotificationManager.DisplayMessageNotification(..., Alert)`. A new MainPlayer clears what
+    it has seen. Any exception turns it off for the session, logged once.
 - **PlateGauge**: a child of `_infoPanel` named `PlateDurabilityGauge`, made once per view and
   kept through the view pool; UpdateInfo re-points it or deactivates it. Polls its item every
   0.25 s (unscaled) while active to catch damage taken with the inventory open. Only the backing
@@ -63,8 +82,18 @@ obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHol
   click/drag handlers, so those bubble up to the ItemView. Letters use the font of
   `BottomPanel.ItemValue` (the game's own). Sprites are procedural, point-filtered (Sprites.cs).
 - **Placement**: bottom-left of the view's rect, pushed right past any active small Image under
-  BottomPanel in the left half (insured icon, repair buff, quest marker, mod icons; other mods'
-  icons too), and shrunk (down to 0.6) rather than run into `ItemValue`'s rendered text.
+  BottomPanel in the left half (mod icons, class icon; other mods' icons too), and shrunk (down to
+  0.6) rather than run into `ItemValue`'s rendered text. The first Place after each Apply runs
+  `LayoutRebuilder.ForceRebuildLayoutImmediate(BottomPanel)` and `ItemValue.ForceMeshUpdate()`
+  first: those icons sit in layout groups that Unity only positions at canvas rebuild (after
+  LateUpdate), so without it the gauge landed on them and jumped clear on the next 0.25 s poll.
+- **Armor Class Icon (slpf/ArmorClassIcon) compatibility** (Joel asked 2026-10-27: start beside its
+  badge, not on it and then move). Its badge is the game's own `ItemViewStats._armorClassIcon`
+  turned on (plus clones in the same parent for multi-badge modes), set in both
+  `ItemViewStats.SetStaticInfo` and `GridItemView.UpdateInfo` postfixes, both before our
+  LateUpdate, so the panel scan finds it once the layout is forced. On views with no class icon
+  slot it adds `ArmorClassBadge` Images straight under the view; Place avoids those too. No
+  reference to the mod, no load-order dependency.
 - Setting change -> `FindObjectsOfType<GridItemView>()` and `UpdateInfo()` on each active one.
 - **PlateTooltip** (Joel asked 2026-10-27 for a fuller hover panel in the vanilla style): a
   prefix on `MultiLineTooltip.Show(_F1DC)` (found by shape: one param whose type has a `Lines`
@@ -93,8 +122,14 @@ obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHol
   (`Durability/MaxDurability`), bottom-right.
 - `GridItemView.AddCustomObjectToInfoPanel` exists (destroys the object on dispose) but is not
   used: the gauge must outlive pool reuse.
-- Prefab positions of InsuredIcon / RepairBuffIcon / ItemViewStats were **not** read (no UnityPy
-  on the work machine), hence the runtime avoidance.
+- Prefabs read 2026-10-27 with UnityPy from `H:\SPT4.1.X\EscapeFromTarkov_Data\resources.assets`
+  (scripts resolve through `globalgamemanagers.assets`; MonoBehaviour typetrees are stripped, so
+  only names and RectTransforms read). Grid, trading and slot item views alike: `Info Panel` >
+  `ItemViewBottomLayoutGroup` (ItemViewBottomPanel, HorizontalLayoutGroup, offset 3,3) >
+  `BottomLeftLayoutGroup` (VerticalLayoutGroup + ItemViewStats: WishlistIcon, **ArmorClassIcon**
+  18x18, ModIconContainer, Special Icon, Inscription), `LyoutBreaker`, `BottomRightLayoutGroup`
+  (VerticalLayoutGroup: RepairRequiredIcon, QuestItem, **InsuranceIcon, RepairBuffIcon**, Value).
+  So insured/repair-buff icons are on the right, stacked above the numbers, not bottom-left.
 
 ## What the first raid test has to look at
 
@@ -102,7 +137,8 @@ obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHol
 2. Stash: a plate carrier with all plates, one with a plate pulled (dashed), a rig with plates, a
    plain rig (no gauge), a soft vest (no gauge), a helmet (no gauge).
 3. Equipped body armor and rig slots: gauge bottom-left, not over the vanilla numbers.
-4. An insured carrier: the gauge must sit right of the insured icon, not on it.
+4. An insured carrier on a small rig: the insured icon stacks above the numbers on the right;
+   the gauge must not run into it.
 5. Take hits in raid with the inventory open: bars slide down. A plate shot to 0: striped.
 6. Repair at a trader: bars rise, a dark wear cap appears on top.
 7. Drag the item, examine an unknown carrier: gauge hides with the numbers.
@@ -115,3 +151,15 @@ obfuscated types only through named members (`Slot`, `ArmorComponent`, `ArmorHol
 12. Clicking, dragging, right-clicking and Ctrl/Shift/Alt-clicking on the gauge itself must act
     on the item exactly as clicking anywhere else on it.
 13. Armor in a raid crate: hidden until searched, gauge once searched (if the model is examined).
+14. With Armor Class Icon: open the stash, scroll, open a trader. The gauge must appear right of
+    the class badge at once, never on it first. Try its "All Plates" and "Lowest & Highest" modes.
+15. Each Style from F12 with the inventory open: switches at once, on light and on black armor.
+    Silver's rounded corners and shadow, Smoke/Bare letter shadows, Slim with no letters, the
+    hover tooltip still opening from the gauge in Bare and Slim, empty and broken slots in each.
+16. Corner TopLeft and TopRight: in the stash (under the item name top right, under a quick-slot
+    number top left on an equipped rig), at a trader (under the price), on a tagged item. No
+    jump on first draw.
+17. The three per-screen switches, and Slot labels ArmorClass (class digits; "-" in an empty slot).
+18. Raid: get a plate shot to zero while wearing it. One message "<slot> broken (<item>)", top
+    right; none at raid start for armor already broken; none for a rig's plate when only body
+    armor is on. No "Plate break messages are off" in the log.
