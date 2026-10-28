@@ -3,7 +3,7 @@
 See the condition of every armor plate right on the item icon. No more opening a carrier to find
 out which plate is cracked.
 
-![Plate gauges on the 6B13, Bagariy and Redut-T5](images/showcase.png)
+![Plate gauges on the 6B13, Bagariy and Redut-T5](https://raw.githubusercontent.com/JoelHauser/PlateDurabilityUI/main/images/showcase.png)
 
 ## Features
 
