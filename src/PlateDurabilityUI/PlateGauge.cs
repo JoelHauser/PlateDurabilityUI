@@ -62,7 +62,6 @@ namespace PlateDurabilityUI
         private ItemViewBottomPanel _bottom;
         private Item _item;
         private RectTransform _body;
-        private Image _panelShadow;
         private Image _panel;
         private GaugeLook _look;
         private readonly List<Bar> _bars = new List<Bar>();
@@ -282,16 +281,6 @@ namespace PlateDurabilityUI
             _body.anchorMin = _body.anchorMax = new Vector2(0.5f, 0.5f);
             _body.pivot = Vector2.zero;
 
-            // The panel is a child, not the body's own image, so a shadow can sit behind it.
-            RectTransform shadowRect = NewRect("Shadow", _body);
-            Stretch(shadowRect, 0f);
-            shadowRect.offsetMin = new Vector2(0f, -1f);
-            shadowRect.offsetMax = new Vector2(0f, -1f);
-            _panelShadow = shadowRect.gameObject.AddComponent<Image>();
-            _panelShadow.type = Image.Type.Sliced;
-            _panelShadow.color = new Color(0f, 0f, 0f, 0.45f);
-            _panelShadow.raycastTarget = false;
-
             RectTransform panelRect = NewRect("Panel", _body);
             Stretch(panelRect, 0f);
             _panel = panelRect.gameObject.AddComponent<Image>();
@@ -429,8 +418,6 @@ namespace PlateDurabilityUI
             _look = look;
             _panel.sprite = look.Panel;
             _panel.color = look.PanelColor;
-            _panelShadow.sprite = look.Panel;
-            _panelShadow.enabled = look.PanelShadow;
         }
 
         private static void Restyle(Bar bar, GaugeLook look)
@@ -661,7 +648,7 @@ namespace PlateDurabilityUI
             float y;
             if (top)
             {
-                PlaceTop(item, PlateDurabilityPlugin.Corner.Value == GaugeCorner.TopRight, ref scale, out x, out y);
+                PlaceTop(viewRect, item, PlateDurabilityPlugin.Corner.Value == GaugeCorner.TopRight, ref scale, out x, out y);
             }
             else
             {
@@ -728,25 +715,49 @@ namespace PlateDurabilityUI
         /// <summary>
         /// A top corner, under whatever the game draws there: the item name top right, the
         /// quick-slot number top left, the price across the top on trader screens, an item tag.
-        /// Text is measured by its letters, not its box, which often spans the whole icon. On an
-        /// item too short for the gauge under all that, it shrinks.
+        /// Text is measured by its letters, not its box, which often spans the whole icon. The
+        /// bottom icon stacks (class icon, Armor Class Icon's badges, the numbers) grow upward and
+        /// on a tall item can reach past the middle: the gauge stays above those rather than going
+        /// under them. On an item too short for the gauge between the two, it shrinks.
         /// </summary>
-        private void PlaceTop(Rect item, bool right, ref float scale, out float x, out float y)
+        private void PlaceTop(RectTransform viewRect, Rect item, bool right, ref float scale, out float x, out float y)
         {
             float width = _size.x * scale;
             float left = right ? item.xMax - Margin - width : item.xMin + Margin;
             float top = item.yMax - Margin;
+            float floor = item.yMin + Margin;
 
             GraphicScratch.Clear();
             transform.parent.GetComponentsInChildren(false, GraphicScratch);
             foreach (Graphic graphic in GraphicScratch)
             {
-                top = Under(graphic, item, left, left + width, top);
+                if (!InColumns(graphic, item, left, left + width, out Rect r))
+                {
+                    continue;
+                }
+                if (_bottom != null && graphic.transform.IsChildOf(_bottom.transform))
+                {
+                    floor = Mathf.Max(floor, r.yMax + IconGap);
+                }
+                else if (r.center.y > item.center.y)
+                {
+                    top = Mathf.Min(top, r.yMin - IconGap);
+                }
             }
             top = Under(Field(CaptionRef, _view), item, left, left + width, top);
             top = Under(Field(TagNameRef, _view), item, left, left + width, top);
 
-            float fit = (top - (item.yMin + Margin)) / (_size.y * scale);
+            for (int i = 0; i < viewRect.childCount; i++)
+            {
+                Transform child = viewRect.GetChild(i);
+                if (child.name == ArmorClassBadgeName && child.gameObject.activeSelf
+                    && InColumns(child.GetComponent<Image>(), item, left, left + width, out Rect r))
+                {
+                    floor = Mathf.Max(floor, r.yMax + IconGap);
+                }
+            }
+
+            float fit = (top - floor) / (_size.y * scale);
             if (fit < 1f)
             {
                 scale *= Mathf.Max(fit, MinFit);
@@ -762,19 +773,30 @@ namespace PlateDurabilityUI
         /// </summary>
         private float Under(Graphic graphic, Rect item, float xMin, float xMax, float top)
         {
+            return InColumns(graphic, item, xMin, xMax, out Rect r) && r.center.y > item.center.y
+                ? Mathf.Min(top, r.yMin - IconGap)
+                : top;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="graphic"/> draws an icon or text over the gauge's columns, and
+        /// where (<paramref name="r"/>). Backdrops and graphics that draw nothing do not count.
+        /// </summary>
+        private bool InColumns(Graphic graphic, Rect item, float xMin, float xMax, out Rect r)
+        {
+            r = default;
             if (graphic == null || !graphic.isActiveAndEnabled || graphic.color.a < 0.05f
                 || graphic.transform.IsChildOf(transform))
             {
-                return top;
+                return false;
             }
 
-            Rect r;
             if (graphic is TMP_Text text)
             {
                 Bounds bounds = text.textBounds;
                 if (string.IsNullOrEmpty(text.text) || bounds.size.x <= 0f)
                 {
-                    return top;
+                    return false;
                 }
                 Vector3 a = transform.InverseTransformPoint(text.rectTransform.TransformPoint(bounds.min));
                 Vector3 c = transform.InverseTransformPoint(text.rectTransform.TransformPoint(bounds.max));
@@ -785,17 +807,15 @@ namespace PlateDurabilityUI
                 r = RectIn(image.rectTransform);
                 if (r.width > item.width * 0.5f || r.height > item.height * 0.5f)
                 {
-                    return top; // a backdrop: the item's own picture, a colour panel, a border
+                    return false; // a backdrop: the item's own picture, a colour panel, a border
                 }
             }
             else
             {
-                return top; // hover targets and other graphics that draw nothing
+                return false; // hover targets and other graphics that draw nothing
             }
 
-            bool topHalf = r.center.y > item.center.y;
-            bool overColumns = r.xMax > xMin && r.xMin < xMax;
-            return r.width > 0f && topHalf && overColumns ? Mathf.Min(top, r.yMin - IconGap) : top;
+            return r.width > 0f && r.xMax > xMin && r.xMin < xMax;
         }
 
         private static T Field<T>(AccessTools.FieldRef<GridItemView, T> field, GridItemView view) where T : class

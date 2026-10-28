@@ -18,6 +18,12 @@ the styles in game and said "looks good". **Not yet run in game:** the corners, 
 switches, class labels and the raid message (tests 15-18 below). The 0.0.1 pre-release zip
 still has a README inside; 0.0.2's does not.
 
+**1.0.0 released 2026-10-28 on GitHub (Latest, full release)**, built on the home machine
+against `H:\SPT4.1.X` and installed there: the rename to Plate Durability (new GUID, old config
+carried over), Top Left/Top Right staying above the bottom icon stacks, Silver removed, short
+README with screenshots. **Not yet run in game:** all of that, plus everything 0.0.2/0.0.3 left
+unrun (below).
+
 **0.0.3 released 2026-10-28 as a GitHub pre-release**, built on the work machine with
 `scripts\pack.ps1 -SPTPath <mirror>`, where the mirror is `BepInEx\core` and
 `EscapeFromTarkov_Data\Managed` copied from `C:\HUH` with Assembly-CSharp patched by SPT's
@@ -40,6 +46,12 @@ scratch "install" whose `Assembly-CSharp.dll` is `H:\SPT4.1.X\...\Assembly-CShar
 with `-p:CompileCheckOnly=true` (copy the sources: pointing obj/out elsewhere from the repo
 duplicates the generated AssemblyInfo). A DLL compiled that way carries obfuscated names and must
 never ship.
+
+**Renamed to Plate Durability (2026-10-28, Joel)**, GUID `com.mybutthasarash.platedurability`
+(was `...platedurabilityui`). On first load the old `.cfg` is copied to the new name so settings
+survive. The DLL, assembly, namespace and repo keep the `PlateDurabilityUI` name on purpose: a
+renamed DLL would sit next to the old one after an update and both would load. The release zip
+is now `PlateDurability-<version>.zip`. README rewritten short, with `images/armor1-3.png`.
 
 ## How it works
 
@@ -64,9 +76,9 @@ never ship.
 - **Styles** (Joel asked 2026-10-27, after the 0.0.1 black panel "didn't look right" next to
   Armor Class Icon's badges, for all five mockups as an option; mockup canvas
   https://claude.ai/artifact/X93myK4EA4LrBdRcy9kDkb): `3. Look > Style` = Smoke (default, my
-  pick, not Joel's), Classic (0.0.1), Bare, Silver, Slim. `GaugeLook.cs` holds each one's sizes,
+  pick, not Joel's), Classic (0.0.1), Bare, Slim (Silver removed 2026-10-28 at Joel's request, with its chip sprite and panel drop shadow). `GaugeLook.cs` holds each one's sizes,
   sprites and colours; `PlateGauge.UseLook/Restyle` apply them, cached per bar so a restyle only
-  happens on change. Panel is a child of the body (so Silver's drop shadow can sit behind it);
+  happens on change. Panel is a child of the body;
   in Bare/Slim it is clear but still the raycast target for the hover. Letter shadows are a
   second TMP copy, not an underlay (no font material instance). Slim never draws letters. The
   tooltip numbers keep the Classic ramp in every style (`Sprites.Ramp`).
@@ -75,7 +87,10 @@ never ship.
     Ragfair/NewOffer, traders = TradingTrader/TradingSell/TradingPlayer, else inventory.
   - Corner: `PlaceTop` pushes the gauge down below every Image (not backdrops) and TMP text (by
     `textBounds`) in the top half over its columns: the info panel's graphics plus `Caption`
-    (name) and `TagName`. `SettleLayout` rebuilds every layout group under the info panel and,
+    (name) and `TagName`. Anything under BottomPanel (and `ArmorClassBadge`) over its columns is
+    a floor it stays above instead: the bottom-left stack grows upward and on a tall rig Armor
+    Class Icon's top badge sits above the middle, which pushed Top Left down mid-icon (Joel's
+    screenshot, 2026-10-28). `SettleLayout` rebuilds every layout group under the info panel and,
     for top corners, force-updates those texts' meshes first.
   - Slot labels: letters or `ArmorComponent.ArmorClass`.
   - **PlateAlerts**: polls `MainPlayer`'s ArmorVest and TacticalVest every 0.5 s through
@@ -167,7 +182,7 @@ never ship.
 14. With Armor Class Icon: open the stash, scroll, open a trader. The gauge must appear right of
     the class badge at once, never on it first. Try its "All Plates" and "Lowest & Highest" modes.
 15. Each Style from F12 with the inventory open: switches at once, on light and on black armor.
-    Silver's rounded corners and shadow, Smoke/Bare letter shadows, Slim with no letters, the
+    Smoke/Bare letter shadows, Slim with no letters, the
     hover tooltip still opening from the gauge in Bare and Slim, empty and broken slots in each.
 16. Corner TopLeft and TopRight: in the stash (under the item name top right, under a quick-slot
     number top left on an equipped rig), at a trader (under the price), on a tagged item. No

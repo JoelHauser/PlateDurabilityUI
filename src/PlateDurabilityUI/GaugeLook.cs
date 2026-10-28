@@ -23,9 +23,6 @@ namespace PlateDurabilityUI
         internal Sprite Panel;
         internal Color PanelColor = Color.white;
 
-        /// <summary>A copy of the panel, darkened, one unit lower: the drop shadow the class badges have.</summary>
-        internal bool PanelShadow;
-
         internal Sprite Track;
         internal Color TrackColor = Color.white;
 
@@ -104,22 +101,6 @@ namespace PlateDurabilityUI
                         _red = red,
                         _amber = amber,
                         _green = green
-                    };
-
-                case GaugeStyle.Silver:
-                    return new GaugeLook
-                    {
-                        // The class badges' own silver, top to bottom, and their dark rim.
-                        Panel = Sprites.Chip(new Color32(182, 186, 190, 255), new Color32(128, 130, 134, 255), new Color32(55, 56, 58, 255)),
-                        PanelShadow = true,
-                        Track = Sprites.White,
-                        TrackColor = new Color32(42, 44, 46, 255),
-                        Dash = new Color32(42, 44, 46, 255),
-                        LetterColor = new Color32(29, 31, 33, 255),
-                        LetterBold = true,
-                        _red = new Color32(214, 84, 62, 255),
-                        _amber = new Color32(222, 172, 64, 255),
-                        _green = new Color32(128, 176, 84, 255)
                     };
 
                 case GaugeStyle.Slim:

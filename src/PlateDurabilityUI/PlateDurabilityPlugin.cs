@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -27,9 +28,6 @@ namespace PlateDurabilityUI
 
         /// <summary>No backing: outlined bars and outlined letters straight on the item.</summary>
         Bare,
-
-        /// <summary>A light silver chip like the game's armor class icons, dark bars and letters.</summary>
-        Silver,
 
         /// <summary>No backing, no letters: thin outlined bars, half the size.</summary>
         Slim
@@ -65,11 +63,14 @@ namespace PlateDurabilityUI
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     public class PlateDurabilityPlugin : BaseUnityPlugin
     {
-        public const string PluginGuid = "com.mybutthasarash.platedurabilityui";
-        public const string PluginName = "Plate Durability UI";
+        public const string PluginGuid = "com.mybutthasarash.platedurability";
+        public const string PluginName = "Plate Durability";
+
+        /// <summary>The GUID up to 0.0.3, when the mod was Plate Durability UI. Its config is carried over once.</summary>
+        private const string OldPluginGuid = "com.mybutthasarash.platedurabilityui";
 
         /// <summary>Must match the csproj's Version. Two places, and they have to agree.</summary>
-        public const string PluginVersion = "0.0.3";
+        public const string PluginVersion = "1.0.0";
 
         internal static ManualLogSource Log;
 
@@ -95,9 +96,32 @@ namespace PlateDurabilityUI
         internal static ConfigEntry<bool> AlertOnBreak;
         internal static ConfigEntry<bool> DebugLogging;
 
+        /// <summary>
+        /// BepInEx names the config after the GUID, so the rename would reset every setting. If
+        /// there is no config under the new GUID yet, start from the old one.
+        /// </summary>
+        private void CarryOverOldConfig()
+        {
+            try
+            {
+                string oldPath = Path.Combine(Path.GetDirectoryName(Config.ConfigFilePath), OldPluginGuid + ".cfg");
+                if (!File.Exists(Config.ConfigFilePath) && File.Exists(oldPath))
+                {
+                    File.Copy(oldPath, Config.ConfigFilePath);
+                    Config.Reload();
+                    Logger.LogInfo("Settings carried over from " + OldPluginGuid + ".cfg.");
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("Could not carry over the old settings: " + e.Message);
+            }
+        }
+
         private void Awake()
         {
             Log = Logger;
+            CarryOverOldConfig();
 
             Enabled = Config.Bind(
                 "1. General",
@@ -211,7 +235,6 @@ namespace PlateDurabilityUI
                 "Smoke: a soft see-through shadow behind the bars, muted colours. "
                 + "Classic: a dark framed panel, bright colours. "
                 + "Bare: no backing, outlined bars and letters. "
-                + "Silver: a light chip that matches the game's armor class icons. "
                 + "Slim: no backing and no letters, thin bars, half the size.");
 
             Corner = Config.Bind(

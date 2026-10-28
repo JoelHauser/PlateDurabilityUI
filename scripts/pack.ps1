@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds Plate Durability UI, checks its version, packs the release zip, and optionally installs it.
+    Builds Plate Durability, checks its version, packs the release zip, and optionally installs it.
 
 .DESCRIPTION
     Run this through PowerShell, not Bash: Bash mangles 'H:\SPT4.1.X' into 'H:SPT4.1.X'.
@@ -62,7 +62,7 @@ $entries = [ordered]@{
 
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$zip = Join-Path $dist "PlateDurabilityUI-$version.zip"
+$zip = Join-Path $dist "PlateDurability-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 
 $archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)

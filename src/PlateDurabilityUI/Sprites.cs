@@ -105,49 +105,6 @@ namespace PlateDurabilityUI
             return sprite;
         }
 
-        /// <summary>
-        /// A chip like the game's armor class icons: a top-to-bottom gradient, a one-pixel dark rim,
-        /// rounded corners. Tall, so the gradient survives nine-slicing (only its middle stretches).
-        /// </summary>
-        internal static Sprite Chip(Color32 top, Color32 bottom, Color32 edge)
-        {
-            const int width = 8;
-            const int height = 32;
-            Texture2D texture = NewTexture(width, height);
-            Color32 clear = new Color32(0, 0, 0, 0);
-            Color32[] pixels = new Color32[width * height];
-            for (int y = 0; y < height; y++)
-            {
-                Color32 fill = Color32.Lerp(bottom, top, y / (float)(height - 1));
-                for (int x = 0; x < width; x++)
-                {
-                    bool sideX = x == 0 || x == width - 1;
-                    bool sideY = y == 0 || y == height - 1;
-                    bool innerCorner = (x == 1 || x == width - 2) && (y == 1 || y == height - 2);
-                    Color32 c;
-                    if (sideX && sideY)
-                    {
-                        c = clear;
-                    }
-                    else if (sideX || sideY || innerCorner)
-                    {
-                        c = edge;
-                    }
-                    else
-                    {
-                        c = fill;
-                    }
-                    pixels[y * width + x] = c;
-                }
-            }
-            texture.SetPixels32(pixels);
-            texture.Apply(false, true);
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0,
-                                          SpriteMeshType.FullRect, new Vector4(3, 3, 3, 3));
-            sprite.name = "PlateGauge.Chip";
-            return sprite;
-        }
-
         /// <summary>A fill with a one-pixel edge in another colour. Nine-sliced.</summary>
         internal static Sprite Framed(Color32 fill, Color32 edge)
         {
