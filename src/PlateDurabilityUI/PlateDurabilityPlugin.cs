@@ -251,8 +251,6 @@ namespace PlateDurabilityUI
                 "Write each armor's plate slots and durabilities to LogOutput.log when its gauge is "
                 + "drawn.");
 
-            Config.SettingChanged += (sender, args) => PlateGauge.MarkAllDirty();
-
             Harmony harmony = new Harmony(PluginGuid);
             try
             {
@@ -261,11 +259,14 @@ namespace PlateDurabilityUI
             catch (Exception e)
             {
                 harmony.UnpatchSelf();
+                // No Update either, so the raid break messages stay off too.
+                enabled = false;
                 Logger.LogError(PluginName + " " + PluginVersion
                                 + " could not apply its patches, so the game is unmodified: " + e);
                 return;
             }
 
+            Config.SettingChanged += (sender, args) => PlateGauge.MarkAllDirty();
             Logger.LogInfo(PluginName + " " + PluginVersion + " loaded.");
         }
 

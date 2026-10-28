@@ -7,7 +7,8 @@ using UnityEngine;
 namespace PlateDurabilityUI
 {
     /// <summary>
-    /// One postfix, on <c>GridItemView.UpdateInfo</c>. Every view that draws an item icon with its
+    /// The gauge's one postfix, on <c>GridItemView.UpdateInfo</c> (the tooltip patches its own,
+    /// see <see cref="PlateTooltip.Apply"/>). Every view that draws an item icon with its
     /// numbers is a GridItemView: stash and container grids, equipment slots (SlotItemView),
     /// corpses, traders, the flea market, insurance, mail. UpdateInfo is what the game itself
     /// calls whenever an item's numbers need redrawing: when the view is made, when a child item

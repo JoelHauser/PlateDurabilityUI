@@ -102,8 +102,13 @@ never ship.
   every soft insert, separator, "Plates fitted n/m". Row = Label "class icon + slot
   LocalizedName()", Value "dur/full pct%" in the ramp colour, "Broken", "Empty", "max N" wear.
   Icon from the public static `FormatArmorClassIcon(int)` found by name over all types. Only
-  when `_subject` (set by a GridItemView.OnPointerEnter prefix, cleared on exit) reads as
-  gauge-worthy armor, so soft vests, helmets and every other MultiLineTooltip are untouched.
+  when `_subject` (set by a GridItemView.OnPointerEnter prefix, cleared on exit, and dropped if
+  its view is no longer active or showing it: a view closed under the pointer never gets its
+  exit) reads as gauge-worthy armor, **and** the Show's first row has the same Label as the
+  first row `_F1DC(subject, false)` builds. `_F1DC` is shared: trader price/charisma, ammo
+  penetration, skill-change costs, `TradingPlayerItemView`'s unsellable-parts list (same
+  "label, '' + separator" shape, item name as header) and the flea's `onlyMoveAble: true`
+  plates all go through the same Show and must stay vanilla. Independent of "Show plate gauge".
   The gauge opens it itself through the `(CompoundItem, bool)` constructor, as vanilla's
   `GridItemView._E018` does. A failure in PlateTooltip.Apply only disables the tooltip.
   English only for the few words it adds (Empty, Broken, max, Plates fitted).
@@ -133,7 +138,7 @@ never ship.
 
 ## What the first raid test has to look at
 
-1. `BepInEx\LogOutput.log` has `Plate Durability UI 0.1.0 loaded.`, and no "Plate gauge failed".
+1. `BepInEx\LogOutput.log` has `Plate Durability UI 0.0.2 loaded.`, and no "Plate gauge failed".
 2. Stash: a plate carrier with all plates, one with a plate pulled (dashed), a rig with plates, a
    plain rig (no gauge), a soft vest (no gauge), a helmet (no gauge).
 3. Equipped body armor and rig slots: gauge bottom-left, not over the vanilla numbers.
@@ -163,3 +168,7 @@ never ship.
 18. Raid: get a plate shot to zero while wearing it. One message "<slot> broken (<item>)", top
     right; none at raid start for armor already broken; none for a rig's plate when only body
     armor is on. No "Plate break messages are off" in the log.
+19. Tooltips that share the window stay vanilla (fixed after 0.0.2): at a trader, hover your own
+    carrier holding a part the trader will not buy (the "unsellable parts" list, item name on
+    top), a trader price with a charisma discount, an ammo penetration tooltip; on the flea, the
+    removable-plates tooltip. Sell a hovered carrier with Ctrl-click, then hover a price.

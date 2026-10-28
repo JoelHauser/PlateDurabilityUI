@@ -12,9 +12,9 @@ using Object = UnityEngine.Object;
 namespace PlateDurabilityUI
 {
     /// <summary>
-    /// The gauge on one item view: a dark plate in the bottom-left corner of the icon with one
-    /// bar per plate slot (front, back, left, right), slot letters under them, and a thin bar for
-    /// the weakest soft insert at the bottom.
+    /// The gauge on one item view: one bar per plate slot (front, back, left, right), slot labels
+    /// under them, and a thin bar for the weakest soft insert at the bottom, in the corner and
+    /// style the settings name (<see cref="GaugeLook"/>).
     ///
     /// It lives on the view's info panel, the layer the game draws the item's name and numbers
     /// on, so it shows and hides with them: it is gone while the item is unsearched, being
@@ -265,6 +265,7 @@ namespace PlateDurabilityUI
         {
             _reading.Clear();
             _reading.Plates.AddRange(reading.Plates);
+            _reading.Softs.AddRange(reading.Softs);
             _reading.HasSoft = reading.HasSoft;
             _reading.Soft = reading.Soft;
             _reading.Signature = reading.Signature;
@@ -314,7 +315,7 @@ namespace PlateDurabilityUI
             {
                 if (Owner != null && Owner._item != null)
                 {
-                    PlateTooltip.OpenFor(Owner._item);
+                    PlateTooltip.OpenFor(Owner._view, Owner._item);
                 }
             }
 

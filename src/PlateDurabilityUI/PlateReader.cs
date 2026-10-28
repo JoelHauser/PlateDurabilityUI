@@ -235,24 +235,54 @@ namespace PlateDurabilityUI
             }
             if (mask != 0)
             {
-                PlateZone best = PlateZone.Other;
-                foreach (EArmorPlateCollider flag in (EArmorPlateCollider[])Enum.GetValues(typeof(EArmorPlateCollider)))
-                {
-                    if ((mask & flag) != 0)
-                    {
-                        PlateZone zone = ZoneFromName(flag.ToString());
-                        if (zone < best)
-                        {
-                            best = zone;
-                        }
-                    }
-                }
+                PlateZone best = ZoneOfMask(mask);
                 if (best != PlateZone.Other)
                 {
                     return best;
                 }
             }
-            return ZoneFromName(slot.ID);
+            return ZoneOfSlotId(slot.ID);
+        }
+
+        // Every gauge on screen reads its plates four times a second: cache what the names say
+        // rather than re-reading enum and slot names each time.
+        private static readonly Dictionary<EArmorPlateCollider, PlateZone> MaskZones = new Dictionary<EArmorPlateCollider, PlateZone>();
+        private static readonly Dictionary<string, PlateZone> SlotZones = new Dictionary<string, PlateZone>();
+
+        private static PlateZone ZoneOfMask(EArmorPlateCollider mask)
+        {
+            if (MaskZones.TryGetValue(mask, out PlateZone best))
+            {
+                return best;
+            }
+            best = PlateZone.Other;
+            foreach (EArmorPlateCollider flag in (EArmorPlateCollider[])Enum.GetValues(typeof(EArmorPlateCollider)))
+            {
+                if ((mask & flag) != 0)
+                {
+                    PlateZone zone = ZoneFromName(flag.ToString());
+                    if (zone < best)
+                    {
+                        best = zone;
+                    }
+                }
+            }
+            MaskZones[mask] = best;
+            return best;
+        }
+
+        private static PlateZone ZoneOfSlotId(string id)
+        {
+            if (id == null)
+            {
+                return PlateZone.Other;
+            }
+            if (!SlotZones.TryGetValue(id, out PlateZone zone))
+            {
+                zone = ZoneFromName(id);
+                SlotZones[id] = zone;
+            }
+            return zone;
         }
 
         private static PlateZone ZoneFromName(string name)

@@ -36,6 +36,7 @@ namespace PlateDurabilityUI
         private static MethodInfo _show;
         private static FieldInfo _lines;
         private static Type _lineType;
+        private static FieldInfo _lineLabel;
         private static ConstructorInfo _lineCtor;
         private static ConstructorInfo _armorInfoCtor;
         private static Func<int, string> _classIcon;
@@ -43,8 +44,9 @@ namespace PlateDurabilityUI
 
         private static readonly ArmorReading Reading = new ArmorReading();
 
-        /// <summary>The armor item the pointer is over, if any. Set on hover, cleared on leave.</summary>
+        /// <summary>The armor item the pointer is over, if any, and its view. Set on hover, cleared on leave.</summary>
         private static Item _subject;
+        private static GridItemView _subjectView;
 
         internal static void Apply(Harmony harmony)
         {
@@ -61,14 +63,13 @@ namespace PlateDurabilityUI
                         ?? throw new MissingMemberException(infoType.Name, "Lines element type");
             _lineCtor = _lineType.GetConstructor(new[] { typeof(string), typeof(string) })
                         ?? throw new MissingMethodException(_lineType.Name, ".ctor(string, string)");
+            _lineLabel = _lineType.GetField("Label")
+                         ?? throw new MissingFieldException(_lineType.Name, "Label");
 
-            // Optional: only needed to open the window from the gauge. Without it the gauge is
-            // simply not hoverable and the vanilla way (hovering the numbers) still works.
-            _armorInfoCtor = infoType.GetConstructor(new[] { typeof(CompoundItem), typeof(bool) });
-            if (_armorInfoCtor == null)
-            {
-                PlateDurabilityPlugin.Log.LogWarning("Armor tooltip constructor not found: the gauge will not open the plate tooltip.");
-            }
+            // The same window shows trader prices, ammo penetration, unsellable parts and more,
+            // so this constructor is also how a Show is recognised as the armor one (by its header).
+            _armorInfoCtor = infoType.GetConstructor(new[] { typeof(CompoundItem), typeof(bool) })
+                             ?? throw new MissingMethodException(infoType.Name, ".ctor(CompoundItem, bool)");
 
             _classIcon = FindClassIconFormatter();
 
@@ -86,18 +87,34 @@ namespace PlateDurabilityUI
         private static void EnterPrefix(GridItemView __instance)
         {
             _subject = __instance.Item;
+            _subjectView = __instance;
         }
 
         private static void ExitPostfix(GridItemView __instance)
         {
-            if (_subject == __instance.Item)
+            if (_subjectView == __instance)
             {
                 _subject = null;
+                _subjectView = null;
             }
         }
 
+        /// <summary>
+        /// The hovered item, while its view is still on screen showing it. A view closed, pooled
+        /// or moved under the pointer never gets its exit, so the subject alone can be stale.
+        /// </summary>
+        private static Item Hovered()
+        {
+            if (_subject == null || _subjectView == null || !_subjectView.isActiveAndEnabled || _subjectView.Item != _subject)
+            {
+                _subject = null;
+                _subjectView = null;
+            }
+            return _subject;
+        }
+
         /// <summary>From the gauge: open the plate tooltip the way hovering the numbers does.</summary>
-        internal static void OpenFor(Item item)
+        internal static void OpenFor(GridItemView view, Item item)
         {
             ItemUiContext context = ItemUiContext.Instance;
             if (_armorInfoCtor == null || context == null || context.MultiLineTooltip == null || !(item is CompoundItem compound))
@@ -107,6 +124,7 @@ namespace PlateDurabilityUI
             try
             {
                 _subject = item;
+                _subjectView = view;
                 object info = _armorInfoCtor.Invoke(new object[] { compound, false });
                 if (context.Tooltip != null)
                 {
@@ -135,26 +153,53 @@ namespace PlateDurabilityUI
         {
             try
             {
-                if (__0 == null || _subject == null
-                    || !PlateDurabilityPlugin.Enabled.Value || !PlateDurabilityPlugin.DetailedTooltip.Value)
+                // Its own setting: the gauge's on/off switch does not turn it off.
+                if (__0 == null || !PlateDurabilityPlugin.DetailedTooltip.Value)
                 {
                     return;
                 }
-                if (!(_lines.GetValue(__0) is Array vanilla) || vanilla.Length == 0)
+                Item subject = Hovered();
+                if (!(subject is CompoundItem compound) || !(_lines.GetValue(__0) is Array vanilla) || vanilla.Length == 0)
                 {
                     return;
                 }
-                if (!PlateReader.TryRead(_subject, Reading, log: false))
+                object header = vanilla.GetValue(0);
+                if (!IsArmorTooltip(header, compound))
+                {
+                    // Another tooltip in the same window (a trader price, unsellable parts, the
+                    // flea's removable plates) that opened over armor: left as it is.
+                    return;
+                }
+                if (!PlateReader.TryRead(subject, Reading, log: false))
                 {
                     // Not armor we draw a gauge for (a soft vest, a helmet): vanilla rows stay.
                     return;
                 }
-                _lines.SetValue(__0, Build(vanilla.GetValue(0)));
+                _lines.SetValue(__0, Build(header));
             }
             catch (Exception e)
             {
                 LogOnce(e);
             }
+        }
+
+        /// <summary>
+        /// Whether <paramref name="header"/> is the first row of the game's armor plate tooltip:
+        /// the same label the game's own (CompoundItem, false) constructor starts it with.
+        /// </summary>
+        private static bool IsArmorTooltip(object header, CompoundItem item)
+        {
+            if (header == null)
+            {
+                return false;
+            }
+            object reference = _armorInfoCtor.Invoke(new object[] { item, false });
+            if (!(_lines.GetValue(reference) is Array lines) || lines.Length == 0 || lines.GetValue(0) == null)
+            {
+                return false;
+            }
+            return string.Equals(_lineLabel.GetValue(header) as string, _lineLabel.GetValue(lines.GetValue(0)) as string,
+                                 StringComparison.Ordinal);
         }
 
         private static Array Build(object vanillaHeader)
