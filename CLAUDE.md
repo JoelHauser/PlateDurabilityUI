@@ -18,6 +18,14 @@ the styles in game and said "looks good". **Not yet run in game:** the corners, 
 switches, class labels and the raid message (tests 15-18 below). The 0.0.1 pre-release zip
 still has a README inside; 0.0.2's does not.
 
+**0.0.3 released 2026-10-28 as a GitHub pre-release**, built on the work machine with
+`scripts\pack.ps1 -SPTPath <mirror>`, where the mirror is `BepInEx\core` and
+`EscapeFromTarkov_Data\Managed` copied from `C:\HUH` with Assembly-CSharp patched by SPT's
+HDiffPatch delta (`C:\HUH\SPT_Runtime\SPT_Data\Launcher\Patches\SPT-core\...\Assembly-CSharp.dll.delta`,
+applied with the NuGet package SharpHDiffPatch.Core) and the original kept as `.spt-bak`.
+`ilspycmd -il` of the result showed no `_E…`/`_F…` names. In it: the tooltip fix (test 19), the tooltip no longer tied to "Show plate
+gauge", the plugin switching itself off when its patches fail, and cleanup. Never run in game.
+
 The source names **no obfuscated type and no member that is only public after SPT's
 publicizer**, which is why the same source compiles against both the unpatched (`_E371`,
 `_EEA7`, ...) and the SPT-remapped assembly. Keep it that way: reach obfuscated types only
@@ -138,7 +146,7 @@ never ship.
 
 ## What the first raid test has to look at
 
-1. `BepInEx\LogOutput.log` has `Plate Durability UI 0.0.2 loaded.`, and no "Plate gauge failed".
+1. `BepInEx\LogOutput.log` has `Plate Durability UI 0.0.3 loaded.`, and no "Plate gauge failed".
 2. Stash: a plate carrier with all plates, one with a plate pulled (dashed), a rig with plates, a
    plain rig (no gauge), a soft vest (no gauge), a helmet (no gauge).
 3. Equipped body armor and rig slots: gauge bottom-left, not over the vanilla numbers.

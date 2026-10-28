@@ -69,7 +69,7 @@ namespace PlateDurabilityUI
         public const string PluginName = "Plate Durability UI";
 
         /// <summary>Must match the csproj's Version. Two places, and they have to agree.</summary>
-        public const string PluginVersion = "0.0.2";
+        public const string PluginVersion = "0.0.3";
 
         internal static ManualLogSource Log;
 
